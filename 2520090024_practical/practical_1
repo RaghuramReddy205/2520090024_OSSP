@@ -1,0 +1,39 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <string.h>
+
+int main() {
+    char command[100];
+
+    printf("Enter a command (e.g., ls, date, pwd): ");
+    scanf("%s", command);
+
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("Fork failed");
+        return 1;
+    } 
+    else if (pid == 0) {
+        printf("\n[Child Process]  PID: %d | Parent PID: %d\n", getpid(), getppid());
+        printf("[Child Process]  Executing command: %s\n", command);
+
+        execlp(command, command, NULL);
+
+        perror("Execution failed");
+        exit(1);
+    } 
+    else {
+        printf("\n[Parent Process] PID: %d | Created Child PID: %d\n", getpid(), pid);
+
+        printf("[Parent Process] Waiting for child to finish...\n");
+        wait(NULL);
+
+        printf("[Parent Process] Child process completed. Exiting.\n");
+    }
+
+    return 0;
+}

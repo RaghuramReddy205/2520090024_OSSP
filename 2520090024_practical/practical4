@@ -1,0 +1,103 @@
+//using wiat()
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+int main() {
+    int n = 3;
+    pid_t children[3];
+
+    printf("Parent process: PID = %d\n", getpid());
+
+    // Create multiple child processes
+    for (int i = 0; i < n; i++) {
+        children[i] = fork();
+
+        if (children[i] < 0) {
+            perror("fork failed");
+            exit(EXIT_FAILURE);
+        }
+
+        if (children[i] == 0) {
+            printf("Child %d: PID = %d, Parent PID = %d\n",
+                   i + 1, getpid(), getppid());
+
+            sleep((i + 1) * 2);
+
+            printf("Child %d: PID = %d finished\n",
+                   i + 1, getpid());
+
+            exit(10 + i);
+        }
+    }
+
+    // Parent waits for children using wait()
+    printf("\nParent waiting using wait()...\n");
+
+    for (int i = 0; i < n; i++) {
+        int status;
+        pid_t pid = wait(&status);
+
+        if (pid > 0) {
+            if (WIFEXITED(status)) {
+                printf("wait(): Child PID %d terminated with status %d\n",
+                       pid, WEXITSTATUS(status));
+            }
+        }
+    }
+
+    printf("All children have completed.\n");
+
+    return 0;
+}
+//use waitpid()
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+int main() {
+    int n = 3;
+    pid_t children[3];
+
+    printf("Parent process: PID = %d\n", getpid());
+
+    for (int i = 0; i < n; i++) {
+        children[i] = fork();
+
+        if (children[i] < 0) {
+            perror("fork failed");
+            exit(EXIT_FAILURE);
+        }
+
+        if (children[i] == 0) {
+            printf("Child %d: PID = %d\n", i + 1, getpid());
+
+            sleep((i + 1) * 2);
+
+            printf("Child %d finished\n", i + 1);
+            exit(20 + i);
+        }
+    }
+
+    printf("\nParent waiting using waitpid()...\n");
+
+    // Wait for children in the order they were created
+    for (int i = 0; i < n; i++) {
+        int status;
+
+        pid_t pid = waitpid(children[i], &status, 0);
+
+        if (pid > 0) {
+            if (WIFEXITED(status)) {
+                printf("waitpid(): Child PID %d terminated with status %d\n",
+                       pid, WEXITSTATUS(status));
+            }
+        }
+    }
+
+    printf("All children have completed.\n");
+
+    return 0;
+}

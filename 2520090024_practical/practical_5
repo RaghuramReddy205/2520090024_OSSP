@@ -1,0 +1,94 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <time.h>
+
+#define N 100000
+
+int main()
+{
+    int pipefd[2];
+    pid_t pid;
+    int data[N];
+
+    struct timespec start, end;
+
+    if (pipe(pipefd) == -1)
+    {
+        perror("pipe");
+        return 1;
+    }
+
+    pid = fork();
+
+    if (pid == -1)
+    {
+        perror("fork");
+        return 1;
+    }
+
+    if (pid > 0)
+    {
+        // Parent - Producer
+
+        close(pipefd[0]);
+
+        for (int i = 0; i < N; i++)
+        {
+            data[i] = i + 1;
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &start);
+
+        write(pipefd[1], data, sizeof(data));
+
+        close(pipefd[1]);
+
+        wait(NULL);
+
+        clock_gettime(CLOCK_MONOTONIC, &end);
+
+        double time_taken =
+            (end.tv_sec - start.tv_sec) +
+            (end.tv_nsec - start.tv_nsec) / 1e9;
+
+        printf("Producer: Data sent successfully.\n");
+        printf("Communication time: %.6f seconds\n", time_taken);
+
+        double throughput =
+            (sizeof(data) / (1024.0 * 1024.0)) / time_taken;
+
+        printf("Communication throughput: %.2f MB/s\n", throughput);
+    }
+    else
+    {
+        // Child - Consumer
+
+        close(pipefd[1]);
+
+        ssize_t total_read = 0;
+        ssize_t bytes_read;
+
+        while (total_read < sizeof(data))
+        {
+            bytes_read = read(
+                pipefd[0],
+                ((char *)data) + total_read,
+                sizeof(data) - total_read
+            );
+
+            if (bytes_read <= 0)
+                break;
+
+            total_read += bytes_read;
+        }
+
+        close(pipefd[0]);
+
+        printf("Consumer: Data received successfully.\n");
+        printf("Consumer received %ld bytes.\n", total_read);
+    }
+
+    return 0;
+}

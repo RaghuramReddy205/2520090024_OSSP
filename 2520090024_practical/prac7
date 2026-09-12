@@ -1,0 +1,46 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+int global_var = 100;
+static int static_var = 200;
+
+void code_function()
+{
+    printf("Code address       : %p\n", (void *)code_function);
+}
+
+int main()
+{
+    int stack_var = 300;
+
+    int *heap_var = malloc(sizeof(int));
+
+    if (heap_var == NULL)
+    {
+        perror("malloc");
+        return 1;
+    }
+
+    *heap_var = 400;
+
+    printf("Process ID         : %d\n\n", getpid());
+
+    printf("Code address       : %p\n", (void *)code_function);
+    printf("Global address     : %p\n", (void *)&global_var);
+    printf("Static address     : %p\n", (void *)&static_var);
+    printf("Heap address       : %p\n", (void *)heap_var);
+    printf("Stack address      : %p\n", (void *)&stack_var);
+
+    printf("\nProgram is running...\n");
+    printf("Press Ctrl+C to terminate.\n");
+
+    while (1)
+    {
+        sleep(1);
+    }
+
+    free(heap_var);
+
+    return 0;
+}

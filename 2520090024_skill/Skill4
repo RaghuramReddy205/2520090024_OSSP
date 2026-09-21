@@ -1,0 +1,541 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#define MAX_INPUT 512
+#define MAX_TOKENS 100
+#define MAX_TEXT 128
+#define MAX_COMMANDS 50
+
+// Token types
+typedef enum {
+    WORD,
+    PIPE,
+    INPUT_REDIRECT,
+    OUTPUT_REDIRECT,
+    APPEND_REDIRECT,
+    SEMICOLON
+} TokenType;
+
+// Structure to store each token
+typedef struct {
+    TokenType type;
+    char text[MAX_TEXT];
+} Token;
+
+// Structure representing a command
+typedef struct {
+    char name[MAX_TEXT];
+    char args[MAX_TOKENS][MAX_TEXT];
+    int argc;
+
+    char input_file[MAX_TEXT];
+    char output_file[MAX_TEXT];
+    int append;
+} Command;
+
+// Structure representing the complete execution plan
+typedef struct {
+    Command commands[MAX_COMMANDS];
+    int count;
+} ExecutionPlan;
+
+
+// Return the name of a token type
+const char *token_name(TokenType type) {
+    switch (type) {
+        case WORD:
+            return "WORD";
+
+        case PIPE:
+            return "PIPE";
+
+        case INPUT_REDIRECT:
+            return "INPUT_REDIRECT";
+
+        case OUTPUT_REDIRECT:
+            return "OUTPUT_REDIRECT";
+
+        case APPEND_REDIRECT:
+            return "APPEND_REDIRECT";
+
+        case SEMICOLON:
+            return "SEMICOLON";
+
+        default:
+            return "UNKNOWN";
+    }
+}
+
+
+// Add a token to the token array
+int add_token(Token tokens[], int *count,
+              TokenType type, const char *text) {
+
+    if (*count >= MAX_TOKENS) {
+        printf("Error: Maximum token limit exceeded.\n");
+        return 0;
+    }
+
+    tokens[*count].type = type;
+
+    snprintf(tokens[*count].text,
+             MAX_TEXT, "%s", text);
+
+    (*count)++;
+
+    return 1;
+}
+
+
+// Tokenizer: splits input into tokens
+int tokenize(const char input[], Token tokens[]) {
+
+    int count = 0;
+    int i = 0;
+
+    while (input[i] != '\0') {
+
+        // Ignore whitespace
+        if (isspace((unsigned char)input[i])) {
+            i++;
+            continue;
+        }
+
+        // Identify pipe
+        if (input[i] == '|') {
+            if (!add_token(tokens, &count, PIPE, "|"))
+                return -1;
+
+            i++;
+        }
+
+        // Identify semicolon
+        else if (input[i] == ';') {
+            if (!add_token(tokens, &count, SEMICOLON, ";"))
+                return -1;
+
+            i++;
+        }
+
+        // Identify input redirection
+        else if (input[i] == '<') {
+            if (!add_token(tokens, &count,
+                           INPUT_REDIRECT, "<"))
+                return -1;
+
+            i++;
+        }
+
+        // Identify output redirection
+        else if (input[i] == '>') {
+
+            if (input[i + 1] == '>') {
+
+                if (!add_token(tokens, &count,
+                               APPEND_REDIRECT, ">>"))
+                    return -1;
+
+                i += 2;
+            }
+            else {
+                if (!add_token(tokens, &count,
+                               OUTPUT_REDIRECT, ">"))
+                    return -1;
+
+                i++;
+            }
+        }
+
+        // Identify words and quoted strings
+        else {
+
+            char word[MAX_TEXT];
+            int j = 0;
+            char quote = '\0';
+
+            while (input[i] != '\0') {
+
+                char c = input[i];
+
+                // Stop at delimiters outside quotes
+                if (quote == '\0' &&
+                    (isspace((unsigned char)c) ||
+                     c == '|' || c == ';' ||
+                     c == '<' || c == '>')) {
+                    break;
+                }
+
+                // Handle single and double quotes
+                if (c == '\'' || c == '"') {
+
+                    if (quote == '\0') {
+                        quote = c;
+                        i++;
+                        continue;
+                    }
+                    else if (quote == c) {
+                        quote = '\0';
+                        i++;
+                        continue;
+                    }
+                }
+
+                // Prevent token buffer overflow
+                if (j >= MAX_TEXT - 1) {
+                    printf("Error: Token is too long.\n");
+                    return -1;
+                }
+
+                word[j++] = c;
+                i++;
+            }
+
+            // Detect unmatched quotation marks
+            if (quote != '\0') {
+                printf("Syntax error: Unmatched quotation mark.\n");
+                return -1;
+            }
+
+            word[j] = '\0';
+
+            if (j > 0) {
+                if (!add_token(tokens, &count, WORD, word))
+                    return -1;
+            }
+        }
+    }
+
+    return count;
+}
+
+
+// Validate the token stream
+int validate_tokens(Token tokens[], int count) {
+
+    if (count == 0) {
+        printf("Empty command: Nothing to parse.\n");
+        return 0;
+    }
+
+    for (int i = 0; i < count; i++) {
+
+        // Pipe cannot appear at the beginning or end
+        if (tokens[i].type == PIPE) {
+
+            if (i == 0 || i == count - 1) {
+                printf("Syntax error: Invalid pipe position.\n");
+                return 0;
+            }
+
+            if (tokens[i - 1].type != WORD ||
+                tokens[i + 1].type != WORD) {
+                printf("Syntax error: Missing command around pipe.\n");
+                return 0;
+            }
+        }
+
+        // Semicolon cannot appear at the beginning or end
+        if (tokens[i].type == SEMICOLON) {
+
+            if (i == 0 || i == count - 1) {
+                printf("Syntax error: Invalid semicolon position.\n");
+                return 0;
+            }
+
+            if (tokens[i - 1].type == SEMICOLON ||
+                tokens[i + 1].type == SEMICOLON) {
+                printf("Syntax error: Empty command between semicolons.\n");
+                return 0;
+            }
+        }
+
+        // Redirection must be followed by a filename
+        if (tokens[i].type == INPUT_REDIRECT ||
+            tokens[i].type == OUTPUT_REDIRECT ||
+            tokens[i].type == APPEND_REDIRECT) {
+
+            if (i + 1 >= count ||
+                tokens[i + 1].type != WORD) {
+
+                printf("Syntax error: Redirection needs a filename.\n");
+                return 0;
+            }
+        }
+    }
+
+    printf("Token validation successful.\n");
+    return 1;
+}
+
+
+// Display tokens for debugging
+void debug_tokens(Token tokens[], int count) {
+
+    printf("\n----- TOKEN DEBUG OUTPUT -----\n");
+
+    for (int i = 0; i < count; i++) {
+        printf("Token %d: %-16s Value: %s\n",
+               i + 1,
+               token_name(tokens[i].type),
+               tokens[i].text);
+    }
+}
+
+
+// Initialize a command structure
+void initialize_command(Command *cmd) {
+
+    memset(cmd, 0, sizeof(Command));
+}
+
+
+// Add an argument to a command
+int add_argument(Command *cmd, const char *arg) {
+
+    if (cmd->argc >= MAX_TOKENS) {
+        printf("Error: Too many arguments.\n");
+        return 0;
+    }
+
+    snprintf(cmd->args[cmd->argc],
+             MAX_TEXT, "%s", arg);
+
+    cmd->argc++;
+
+    return 1;
+}
+
+
+// Parser: builds the execution plan
+int parse_tokens(Token tokens[], int count,
+                 ExecutionPlan *plan) {
+
+    memset(plan, 0, sizeof(ExecutionPlan));
+
+    Command *cmd = &plan->commands[0];
+
+    initialize_command(cmd);
+
+    plan->count = 1;
+
+    for (int i = 0; i < count; i++) {
+
+        // Handle normal words
+        if (tokens[i].type == WORD) {
+
+            if (cmd->name[0] == '\0') {
+
+                snprintf(cmd->name, MAX_TEXT,
+                         "%s", tokens[i].text);
+
+                if (!add_argument(cmd, tokens[i].text))
+                    return 0;
+            }
+            else {
+                if (!add_argument(cmd, tokens[i].text))
+                    return 0;
+            }
+        }
+
+        // Handle input redirection
+        else if (tokens[i].type == INPUT_REDIRECT) {
+
+            if (i + 1 >= count ||
+                tokens[i + 1].type != WORD) {
+                return 0;
+            }
+
+            snprintf(cmd->input_file, MAX_TEXT,
+                     "%s", tokens[i + 1].text);
+
+            i++;
+        }
+
+        // Handle output redirection
+        else if (tokens[i].type == OUTPUT_REDIRECT ||
+                 tokens[i].type == APPEND_REDIRECT) {
+
+            if (i + 1 >= count ||
+                tokens[i + 1].type != WORD) {
+                return 0;
+            }
+
+            snprintf(cmd->output_file, MAX_TEXT,
+                     "%s", tokens[i + 1].text);
+
+            cmd->append =
+                (tokens[i].type == APPEND_REDIRECT);
+
+            i++;
+        }
+
+        // Pipe or semicolon starts a new command
+        else if (tokens[i].type == PIPE ||
+                 tokens[i].type == SEMICOLON) {
+
+            if (plan->count >= MAX_COMMANDS) {
+                printf("Error: Too many commands.\n");
+                return 0;
+            }
+
+            cmd = &plan->commands[plan->count];
+
+            initialize_command(cmd);
+
+            plan->count++;
+        }
+    }
+
+    // Ensure each command has a command name
+    for (int i = 0; i < plan->count; i++) {
+
+        if (plan->commands[i].name[0] == '\0') {
+            printf("Syntax error: Missing command name.\n");
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+
+// Display the parse tree
+void display_parse_tree(ExecutionPlan *plan) {
+
+    printf("\n----- PARSE TREE -----\n");
+
+    printf("ExecutionPlan\n");
+
+    for (int i = 0; i < plan->count; i++) {
+
+        Command *cmd = &plan->commands[i];
+
+        printf("  |\n");
+        printf("  +-- Command: %s\n", cmd->name);
+
+        printf("      +-- Arguments:");
+
+        for (int j = 0; j < cmd->argc; j++) {
+            printf(" %s", cmd->args[j]);
+        }
+
+        printf("\n");
+
+        if (cmd->input_file[0] != '\0') {
+            printf("      +-- Input file: %s\n",
+                   cmd->input_file);
+        }
+
+        if (cmd->output_file[0] != '\0') {
+
+            printf("      +-- Output file: %s\n",
+                   cmd->output_file);
+
+            printf("      +-- Mode: %s\n",
+                   cmd->append ? "Append" : "Overwrite");
+        }
+    }
+}
+
+
+// Display the execution structure
+void display_execution_plan(ExecutionPlan *plan) {
+
+    printf("\n----- EXECUTION STRUCTURE -----\n");
+
+    for (int i = 0; i < plan->count; i++) {
+
+        Command *cmd = &plan->commands[i];
+
+        printf("Command %d: %s\n",
+               i + 1, cmd->name);
+
+        printf("Arguments:");
+
+        for (int j = 0; j < cmd->argc; j++) {
+            printf(" %s", cmd->args[j]);
+        }
+
+        printf("\n");
+
+        if (cmd->input_file[0] != '\0') {
+            printf("Input: %s\n", cmd->input_file);
+        }
+
+        if (cmd->output_file[0] != '\0') {
+            printf("Output: %s\n", cmd->output_file);
+        }
+
+        printf("\n");
+    }
+}
+
+
+// Main function
+int main(void) {
+
+    char input[MAX_INPUT];
+
+    Token tokens[MAX_TOKENS];
+
+    ExecutionPlan plan;
+
+    printf("====================================\n");
+    printf("   TOKENIZER AND PARSER LAB\n");
+    printf("====================================\n");
+
+    printf("Enter a command to parse:\n> ");
+
+    if (fgets(input, sizeof(input), stdin) == NULL) {
+        printf("Input error.\n");
+        return 1;
+    }
+
+    // Remove trailing newline
+    input[strcspn(input, "\n")] = '\0';
+
+    // Handle empty input
+    if (input[0] == '\0') {
+        printf("Empty command entered.\n");
+        return 0;
+    }
+
+    // Tokenization
+    int count = tokenize(input, tokens);
+
+    if (count < 0) {
+        printf("Tokenization failed.\n");
+        return 1;
+    }
+
+    if (count == 0) {
+        printf("Empty command: No tokens found.\n");
+        return 0;
+    }
+
+    // Debug output
+    debug_tokens(tokens, count);
+
+    // Validate tokens
+    if (!validate_tokens(tokens, count)) {
+        printf("Parsing stopped because of syntax errors.\n");
+        return 1;
+    }
+
+    // Parse tokens into execution structure
+    if (!parse_tokens(tokens, count, &plan)) {
+        printf("Parser failed to create execution structure.\n");
+        return 1;
+    }
+
+    // Display results
+    display_parse_tree(&plan);
+
+    display_execution_plan(&plan);
+
+    printf("Parsing completed successfully.\n");
+
+    return 0;
+}

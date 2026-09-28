@@ -1,0 +1,15 @@
+#include <stdio.h>
+#include <string.h>
+
+int main() {
+    char *single = "'Hello $USER World'";
+    char *double_quote = "\"Hello $USER World\"";
+
+    printf("Single Quotes : %s\n", single);
+    printf("Double Quotes : %s\n", double_quote);
+
+    printf("\nSingle quotes preserve literal content.\n");
+    printf("Double quotes allow variable expansion in the shell.\n");
+
+    return 0;
+}

@@ -1,0 +1,84 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <limits.h>
+
+void find_executable(char *command) {
+    char *path = getenv("PATH");
+
+    if (path == NULL) {
+        printf("PATH variable not found.\n");
+        return;
+    }
+
+    char path_copy[4096];
+    strcpy(path_copy, path);
+
+    char *directory = strtok(path_copy, ":");
+
+    while (directory != NULL) {
+        char full_path[PATH_MAX];
+
+        snprintf(full_path, sizeof(full_path),
+                 "%s/%s", directory, command);
+
+        if (access(full_path, X_OK) == 0) {
+            printf("Executable found: %s\n", full_path);
+            return;
+        }
+
+        directory = strtok(NULL, ":");
+    }
+
+    printf("Command not found: %s\n", command);
+}
+
+int main() {
+    char command[100];
+
+    printf("Enter command to search: ");
+    scanf("%99s", command);
+
+    printf("\n--- PATH Resolution ---\n");
+
+    find_executable(command);
+
+    printf("\n--- Creating Child Process ---\n");
+
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("fork failed");
+        return 1;
+    }
+
+    if (pid == 0) {
+        printf("Child Process: PID = %d\n", getpid());
+        printf("Child Process: Executing command...\n");
+
+        execlp(command, command, (char *)NULL);
+
+        perror("Execution failed");
+        exit(1);
+    }
+
+    else {
+        int status;
+
+        printf("Parent Process: PID = %d\n", getpid());
+        printf("Parent Process: Waiting for child...\n");
+
+        waitpid(pid, &status, 0);
+
+        printf("Parent Process: Child process finished.\n");
+
+        if (WIFEXITED(status)) {
+            printf("Child exit status: %d\n",
+                   WEXITSTATUS(status));
+        }
+    }
+
+    return 0;
+}

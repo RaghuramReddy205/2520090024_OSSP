@@ -1,0 +1,97 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+void handle_escape(const char *input, char *output) {
+    int i = 0, j = 0;
+
+    while (input[i] != '\0') {
+        if (input[i] == '\\' && input[i + 1] != '\0') {
+            i++;
+
+            switch (input[i]) {
+                case 'n':
+                    output[j++] = '\n';
+                    break;
+
+                case 't':
+                    output[j++] = '\t';
+                    break;
+
+                case '\\':
+                    output[j++] = '\\';
+                    break;
+
+                case ' ':
+                    output[j++] = ' ';
+                    break;
+
+                case '$':
+                    output[j++] = '$';
+                    break;
+
+                case '"':
+                    output[j++] = '"';
+                    break;
+
+                case '\'':
+                    output[j++] = '\'';
+                    break;
+
+                default:
+                    output[j++] = input[i];
+                    break;
+            }
+        } else {
+            output[j++] = input[i];
+        }
+
+        i++;
+    }
+
+    output[j] = '\0';
+}
+
+int main() {
+    char input[200];
+    char output[200];
+
+    printf("Enter text with escape sequences: ");
+    fgets(input, sizeof(input), stdin);
+
+    input[strcspn(input, "\n")] = '\0';
+
+    handle_escape(input, output);
+
+    printf("\nParsed Output:\n%s\n", output);
+
+    printf("\nCreating child process...\n");
+
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("fork failed");
+        return 1;
+    }
+
+    if (pid == 0) {
+        char *args[] = {"ls", "-l", NULL};
+
+        printf("Child Process: Executing ls -l\n");
+
+        execvp(args[0], args);
+
+        perror("execvp failed");
+        exit(1);
+    } else {
+        printf("Parent Process: Waiting for child...\n");
+
+        waitpid(pid, NULL, 0);
+
+        printf("Parent Process: Child completed.\n");
+    }
+
+    return 0;
+}

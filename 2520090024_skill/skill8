@@ -1,0 +1,213 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#define MAX_INPUT 256
+#define MAX_ARGS 20
+#define MAX_VARS 20
+
+typedef struct {
+    char name[50];
+    char value[100];
+} Variable;
+
+Variable variables[MAX_VARS];
+int variable_count = 0;
+
+/* Find a variable */
+char *get_variable(char *name) {
+    for (int i = 0; i < variable_count; i++) {
+        if (strcmp(variables[i].name, name) == 0) {
+            return variables[i].value;
+        }
+    }
+
+    return NULL;
+}
+
+/* Set or update a variable */
+void set_variable(char *name, char *value) {
+    for (int i = 0; i < variable_count; i++) {
+        if (strcmp(variables[i].name, name) == 0) {
+            strcpy(variables[i].value, value);
+            return;
+        }
+    }
+
+    if (variable_count < MAX_VARS) {
+        strcpy(variables[variable_count].name, name);
+        strcpy(variables[variable_count].value, value);
+        variable_count++;
+    }
+}
+
+/* Expand $VARIABLE references */
+void expand_variables(char *input, char *output) {
+    int i = 0;
+    int j = 0;
+
+    while (input[i] != '\0') {
+
+        if (input[i] == '$') {
+            i++;
+
+            char name[50];
+            int k = 0;
+
+            while ((input[i] >= 'A' && input[i] <= 'Z') ||
+                   (input[i] >= 'a' && input[i] <= 'z') ||
+                   (input[i] >= '0' && input[i] <= '9') ||
+                   input[i] == '_') {
+
+                name[k++] = input[i++];
+            }
+
+            name[k] = '\0';
+
+            char *value = get_variable(name);
+
+            if (value != NULL) {
+                strcpy(&output[j], value);
+                j += strlen(value);
+            } else {
+                printf("Warning: Undefined variable $%s\n", name);
+            }
+        }
+
+        else {
+            output[j++] = input[i++];
+        }
+    }
+
+    output[j] = '\0';
+}
+
+/* Built-in commands */
+
+void builtin_echo(char **args) {
+    for (int i = 1; args[i] != NULL; i++) {
+        printf("%s ", args[i]);
+    }
+
+    printf("\n");
+}
+
+void builtin_pwd() {
+    char path[1024];
+
+    if (getcwd(path, sizeof(path)) != NULL) {
+        printf("%s\n", path);
+    }
+}
+
+void builtin_cd(char **args) {
+    if (args[1] == NULL) {
+        printf("cd: missing directory\n");
+        return;
+    }
+
+    if (chdir(args[1]) != 0) {
+        perror("cd");
+    }
+}
+
+void builtin_set(char **args) {
+    if (args[1] == NULL || args[2] == NULL) {
+        printf("Usage: set VARIABLE VALUE\n");
+        return;
+    }
+
+    set_variable(args[1], args[2]);
+
+    printf("Variable %s = %s\n", args[1], args[2]);
+}
+
+/* Dispatch table */
+
+typedef void (*CommandFunction)(char **);
+
+typedef struct {
+    char *name;
+    CommandFunction function;
+} Builtin;
+
+void execute_pwd(char **args) {
+    builtin_pwd();
+}
+
+Builtin dispatch_table[] = {
+    {"echo", builtin_echo},
+    {"pwd", execute_pwd},
+    {"cd", builtin_cd},
+    {"set", builtin_set}
+};
+
+int builtin_count = 4;
+
+/* Execute built-in */
+void execute_builtin(char **args) {
+
+    for (int i = 0; i < builtin_count; i++) {
+
+        if (strcmp(args[0], dispatch_table[i].name) == 0) {
+            dispatch_table[i].function(args);
+            return;
+        }
+    }
+
+    printf("Invalid command: %s\n", args[0]);
+}
+
+/* Main shell */
+int main() {
+
+    char input[MAX_INPUT];
+    char expanded[MAX_INPUT];
+
+    printf("Simple Shell Started\n");
+    printf("Built-ins: echo, pwd, cd, set\n");
+    printf("Type exit to quit.\n\n");
+
+    while (1) {
+
+        printf("shell> ");
+        fgets(input, sizeof(input), stdin);
+
+        input[strcspn(input, "\n")] = '\0';
+
+        if (strcmp(input, "exit") == 0) {
+            break;
+        }
+
+        if (strlen(input) == 0) {
+            continue;
+        }
+
+        /* Expand variables */
+        expand_variables(input, expanded);
+
+        printf("Expanded command: %s\n", expanded);
+
+        /* Tokenize command */
+        char *args[MAX_ARGS];
+        int count = 0;
+
+        char *token = strtok(expanded, " ");
+
+        while (token != NULL && count < MAX_ARGS - 1) {
+            args[count++] = token;
+            token = strtok(NULL, " ");
+        }
+
+        args[count] = NULL;
+
+        if (count > 0) {
+            execute_builtin(args);
+        }
+    }
+
+    printf("Shell terminated.\n");
+
+    return 0;
+}
